@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"],
+    "noEmit": true
+  },
+  "include": [
+    "app/page.tsx",
+    "app/layout.tsx",
+    "app/vray-app.tsx",
+    "app/industry-data.ts",
+    "static-pages/**/*.tsx",
+    "vite.pages.config.ts"
+  ],
+  "exclude": ["db", "worker", "examples", "dist", "dist-pages"]
+}
