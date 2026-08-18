@@ -4,6 +4,7 @@ import { ChangeEvent, useMemo, useRef, useState } from "react";
 import { INDUSTRIES, INDUSTRY_GROUPS, SOURCE_NOTE, type Industry } from "./industry-data";
 
 type Method = "income" | "royalty1" | "royalty2";
+type SalesMode = "growth" | "direct";
 type InputTab = "basic" | "technology" | "finance";
 type OutputTab = "summary" | "cashflow" | "evidence";
 type ScoreMap = Record<string, number>;
@@ -12,8 +13,10 @@ type ModelState = {
   projectName: string;
   industryId: string;
   method: Method;
+  salesMode: SalesMode;
   baseSales: number;
   growthRate: number;
+  directSales: number[];
   costMode: "industry" | "direct";
   costRatio: number;
   sgaRatio: number;
@@ -73,8 +76,10 @@ function initialState(industry: Industry): ModelState {
     projectName: "기능성 식품 기술가치평가",
     industryId: industry.id,
     method: "income",
+    salesMode: "growth",
     baseSales: 5000,
     growthRate: industry.growthRate,
+    directSales: [],
     costMode: "industry",
     costRatio: industry.costRatio,
     sgaRatio: industry.sgaRatio,
@@ -100,6 +105,35 @@ function initialState(industry: Industry): ModelState {
     royaltyAdjustment: 1,
     royaltyQuartile: "q2",
     ipEffectiveness: 1,
+  };
+}
+
+function salesProjection(baseSales: number, growthRate: number) {
+  return Array.from({ length: 20 }, (_, index) => Math.max(0, baseSales * Math.pow(1 + growthRate, index)));
+}
+
+function hydrateModel(candidate: Partial<ModelState>): ModelState {
+  const fallbackIndustry = INDUSTRIES.find((item) => item.id === "EV33") ?? INDUSTRIES[0];
+  const selectedIndustry = INDUSTRIES.find((item) => item.id === candidate.industryId) ?? fallbackIndustry;
+  const defaults = initialState(selectedIndustry);
+  const salesMode: SalesMode = candidate.salesMode === "direct" ? "direct" : "growth";
+  const baseSales = Number.isFinite(candidate.baseSales) ? Number(candidate.baseSales) : defaults.baseSales;
+  const growthRate = Number.isFinite(candidate.growthRate) ? Number(candidate.growthRate) : defaults.growthRate;
+  const projectedSales = salesProjection(baseSales, growthRate);
+  const importedSales = Array.isArray(candidate.directSales) ? candidate.directSales : [];
+  const directSales = salesMode === "direct"
+    ? projectedSales.map((fallback, index) => Number.isFinite(importedSales[index]) ? Math.max(0, Number(importedSales[index])) : fallback)
+    : importedSales.filter(Number.isFinite).map((value) => Math.max(0, Number(value))).slice(0, 20);
+
+  return {
+    ...defaults,
+    ...candidate,
+    salesMode,
+    baseSales,
+    growthRate,
+    directSales,
+    lifeScores: { ...defaults.lifeScores, ...(candidate.lifeScores ?? {}) },
+    techScores: { ...defaults.techScores, ...(candidate.techScores ?? {}) },
   };
 }
 
@@ -169,9 +203,14 @@ export default function VrayApp() {
     const royaltyRate1 = clamp(industry.runningRoyaltyQ2 * model.royaltyAdjustment * model.techShare, 0, 0.25);
     const royaltyRate2 = clamp(qRate * model.ipEffectiveness * model.techShare, 0, 0.25);
     const rows = [];
-    let previousSales = model.baseSales / Math.max(1 + model.growthRate, 0.01);
+    let previousSales = model.salesMode === "direct"
+      ? Math.max(0, model.directSales[0] ?? model.baseSales)
+      : model.baseSales / Math.max(1 + model.growthRate, 0.01);
     for (let year = 1; year <= life; year += 1) {
-      const sales = model.baseSales * Math.pow(1 + model.growthRate, year - 1);
+      const projectedSales = model.baseSales * Math.pow(1 + model.growthRate, year - 1);
+      const sales = model.salesMode === "direct"
+        ? Math.max(0, model.directSales[year - 1] ?? projectedSales)
+        : projectedSales;
       const grossProfit = sales * (1 - costRatio);
       const ebit = sales * (1 - costRatio - sgaRatio);
       const tax = Math.max(ebit, 0) * model.taxRate;
@@ -200,6 +239,31 @@ export default function VrayApp() {
 
   const setField = <K extends keyof ModelState>(key: K, value: ModelState[K]) => setModel((current) => ({ ...current, [key]: value }));
 
+  const selectSalesMode = (salesMode: SalesMode) => {
+    setModel((current) => ({
+      ...current,
+      salesMode,
+      directSales: salesMode === "direct" && current.directSales.length === 0
+        ? salesProjection(current.baseSales, current.growthRate)
+        : current.directSales,
+    }));
+  };
+
+  const updateDirectSales = (index: number, value: number) => {
+    setModel((current) => {
+      const directSales = current.directSales.length === 0
+        ? salesProjection(current.baseSales, current.growthRate)
+        : [...current.directSales];
+      directSales[index] = Math.max(0, value);
+      return { ...current, directSales, baseSales: index === 0 ? Math.max(0, value) : current.baseSales };
+    });
+  };
+
+  const resetDirectSales = () => {
+    setModel((current) => ({ ...current, directSales: salesProjection(current.baseSales, current.growthRate) }));
+    setNotice("현재 1차년도 매출과 성장률 기준으로 연도별 매출을 채웠습니다.");
+  };
+
   const selectIndustry = (id: string) => {
     const next = INDUSTRIES.find((item) => item.id === id) ?? INDUSTRIES[0];
     setModel((current) => ({ ...current, industryId: id, growthRate: next.growthRate, costRatio: next.costRatio, sgaRatio: next.sgaRatio, depreciationRatio: next.depreciationRatio, capexRatio: next.capexRatio, workingCapitalRatio: next.workingCapitalRatio, directTct: next.baseTct, directWacc: next.wacc, beta: next.beta, kd: next.kd, equityRatio: next.equityRatio }));
@@ -219,7 +283,7 @@ export default function VrayApp() {
   const loadScenario = () => {
     const saved = localStorage.getItem("vray-2.0-scenario");
     if (!saved) return setNotice("저장된 시나리오가 없습니다.");
-    try { setModel(JSON.parse(saved)); setNotice("저장된 시나리오를 불러왔습니다."); } catch { setNotice("저장 파일을 읽지 못했습니다."); }
+    try { setModel(hydrateModel(JSON.parse(saved))); setNotice("저장된 시나리오를 불러왔습니다."); } catch { setNotice("저장 파일을 읽지 못했습니다."); }
   };
 
   const exportScenario = () => {
@@ -241,7 +305,7 @@ export default function VrayApp() {
         const parsed = JSON.parse(String(reader.result));
         const candidate = parsed.model ?? parsed;
         if (!INDUSTRIES.some((item) => item.id === candidate.industryId)) throw new Error("industry");
-        setModel(candidate);
+        setModel(hydrateModel(candidate));
         setNotice("시나리오 파일을 불러왔습니다.");
       } catch { setNotice("올바른 V-RAY 2.0 시나리오 파일이 아닙니다."); }
     };
@@ -294,8 +358,15 @@ export default function VrayApp() {
             <label className="field"><span>평가업종 <em>{industry.id}</em></span><select value={model.industryId} onChange={(e) => selectIndustry(e.target.value)}>{INDUSTRY_GROUPS.map((group) => <optgroup key={group} label={group}>{INDUSTRIES.filter((item) => item.group === group).map((item) => <option key={item.id} value={item.id}>{item.id} · {item.name}</option>)}</optgroup>)}</select></label>
             <div className="industry-preview"><div><span className={`grade grade-${industry.dataGrade}`}>{industry.dataGrade}</span><strong>{industry.name}</strong></div><p>{industry.definition}</p><small>{MODE_LABEL[industry.statMode]} · 재무통계 등가표본수 {fmtNum(industry.sample, 0)}</small></div>
             <fieldset><legend>평가방법</legend><div className="choice-grid">{(["income", "royalty1", "royalty2"] as Method[]).map((method) => <button key={method} className={model.method === method ? "choice active" : "choice"} onClick={() => setField("method", method)}><strong>{METHOD_LABEL[method]}</strong><span>{method === "income" ? "초과현금흐름 × 기술기여도" : method === "royalty1" ? "경상로열티 × 조정계수" : "사분위 로열티 × IP 유효성"}</span></button>)}</div></fieldset>
-            <label className="field"><span>1차년도 예상 매출액</span><NumberInput value={model.baseSales} min={0} step={100} unit="백만원" onChange={(value) => setField("baseSales", value)} /></label>
-            <label className="field"><span>연평균 매출 성장률 <em>업종 기준 {fmtPct(industry.growthRate)}</em></span><PctInput value={model.growthRate} min={-20} max={50} onChange={(value) => setField("growthRate", value)} /></label>
+            <fieldset><legend>예상매출 입력방식</legend><div className="segmented"><button type="button" className={model.salesMode === "growth" ? "active" : ""} onClick={() => selectSalesMode("growth")}>성장률 자동 계산</button><button type="button" className={model.salesMode === "direct" ? "active" : ""} onClick={() => selectSalesMode("direct")}>연도별 직접 입력</button></div></fieldset>
+            {model.salesMode === "growth" ? <>
+              <label className="field"><span>1차년도 예상 매출액</span><NumberInput value={model.baseSales} min={0} step={100} unit="백만원" onChange={(value) => setField("baseSales", value)} /></label>
+              <label className="field"><span>연평균 매출 성장률 <em>업종 기준 {fmtPct(industry.growthRate)}</em></span><PctInput value={model.growthRate} min={-20} max={50} onChange={(value) => setField("growthRate", value)} /></label>
+            </> : <fieldset className="sales-entry-panel">
+              <legend>연도별 예상 매출액 <em>적용 기술수명 {analysis.life}년</em></legend>
+              <div className="sales-entry-heading"><p>각 연도의 사업계획 매출을 직접 입력합니다.</p><button type="button" onClick={resetDirectSales}>자동 전망값으로 채우기</button></div>
+              <div className="sales-entry-grid">{Array.from({ length: analysis.life }, (_, index) => <label className="field" key={index}><span>{index + 1}차년도</span><NumberInput value={model.directSales[index] ?? 0} min={0} step={100} unit="백만원" onChange={(value) => updateDirectSales(index, value)} /></label>)}</div>
+            </fieldset>}
             {model.method === "royalty1" && <label className="field"><span>로열티 조정계수</span><PctInput value={model.royaltyAdjustment} min={50} max={150} step={1} onChange={(value) => setField("royaltyAdjustment", value)} /></label>}
             {model.method === "royalty2" && <><label className="field"><span>적용 사분위</span><select value={model.royaltyQuartile} onChange={(e) => setField("royaltyQuartile", e.target.value as ModelState["royaltyQuartile"])}><option value="q1">Q1 · {fmtPct(industry.runningRoyaltyQ1, 2)}</option><option value="q2">Q2 중위수 · {fmtPct(industry.runningRoyaltyQ2, 2)}</option><option value="q3">Q3 · {fmtPct(industry.runningRoyaltyQ3, 2)}</option></select></label><label className="field"><span>지식재산 유효성 조정</span><PctInput value={model.ipEffectiveness} min={50} max={150} step={1} onChange={(value) => setField("ipEffectiveness", value)} /></label></>}
           </div>}
