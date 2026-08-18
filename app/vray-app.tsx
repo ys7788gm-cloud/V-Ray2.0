@@ -264,12 +264,15 @@ export default function VrayApp() {
           <button className="button ghost" onClick={loadScenario}>불러오기</button>
           <button className="button ghost desktop-only" onClick={exportScenario}>JSON 내보내기</button>
           <button className="button primary" onClick={() => window.print()}>평가서 인쇄</button>
+          <form action="/api/access/logout" method="post">
+            <button className="button ghost desktop-only" type="submit">잠금</button>
+          </form>
           <input ref={importRef} hidden type="file" accept="application/json" onChange={importScenario} />
         </div>
       </header>
 
       <section className="hero-band">
-        <div><span className="eyebrow">PUBLIC BETA · V 2.0.0</span><h1>근거가 보이는<br />기술가치평가.</h1><p>73개 농식품·스마트농업·푸드테크 업종의 핵심변수와 V-RAY 평가논리를 브라우저에서 바로 계산합니다.</p></div>
+        <div><span className="eyebrow">RESTRICTED ACCESS · V 2.0.0</span><h1>근거가 보이는<br />기술가치평가.</h1><p>73개 농식품·스마트농업·푸드테크 업종의 핵심변수와 V-RAY 평가논리를 브라우저에서 바로 계산합니다.</p></div>
         <div className="hero-status"><span className="pulse" /><div><small>MODEL STATUS</small><strong>{analysis.warnings.some((item) => item.includes("100%") || item.includes("음수")) ? "REVIEW" : "PASS"}</strong><p>{INDUSTRIES.length}개 업종 · {analysis.life}년 현금흐름 · 실시간 계산</p></div></div>
       </section>
 
