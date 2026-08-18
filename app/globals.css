@@ -105,6 +105,13 @@ fieldset legend { display: block; width: 100%; margin-bottom: 9px; }
 .segmented.three { grid-template-columns: repeat(3, 1fr); }
 .segmented button { border: 0; border-radius: 8px; background: transparent; padding: 9px 7px; color: var(--muted); font-size: 11px; font-weight: 800; cursor: pointer; }
 .segmented button.active { background: #fff; color: var(--green); box-shadow: 0 2px 8px rgba(20,34,28,.08); }
+.sales-entry-panel { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f7f9f6; }
+.sales-entry-heading { margin: -2px 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sales-entry-heading p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.sales-entry-heading button { flex: none; border: 0; background: transparent; color: var(--green); font-size: 10px; font-weight: 800; cursor: pointer; }
+.sales-entry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.sales-entry-grid .field > span { color: var(--muted); }
+.sales-entry-grid .input-with-unit { background: #fff; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 .score-list { display: grid; gap: 7px; }
 .score-list label { display: grid; grid-template-columns: 1fr 128px; gap: 10px; align-items: center; }
@@ -249,6 +256,7 @@ tfoot th { border: 0; background: var(--mint); color: var(--green); }
   .input-panel, .output-panel { padding: 18px; }
   .panel-heading h2, .report-header h2 { font-size: 18px; }
   .choice { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .sales-entry-heading { align-items: flex-start; flex-direction: column; }
   .two-col, .summary-grid, .evidence-table dl { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: repeat(3, 1fr); }
   .metric-card { min-height: 90px; padding: 11px; }
